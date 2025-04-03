@@ -1,3 +1,4 @@
+import dotenv from "dotenv";
 import express from "express";
 import pg from "pg";
 import bcrypt from "bcrypt";
@@ -5,18 +6,23 @@ import cors from "cors";
 import multer from "multer";
 import fs from "fs";
 
+dotenv.config(); // Load environment variables
+
 const app = express();
-app.use(express.json());
-const port = 3000;
+const port = process.env.PORT || 3000;
 const saltRounds = 10;
+
+app.use(express.json());
+app.use(cors());
+app.use("/uploads", express.static("uploads"));
 
 // Database connection
 const db = new pg.Client({
-  user: "postgres",
-  host: "localhost",
-  database: "Authentication",
-  password: "prudhvi",
-  port: 5432,
+  user: process.env.PG_USER,
+  host: process.env.PG_HOST,
+  database: process.env.PG_DATABASE,
+  password: process.env.PG_PASSWORD,
+  port: process.env.PG_PORT,
 });
 
 (async () => {
@@ -29,17 +35,13 @@ const db = new pg.Client({
   }
 })();
 
-app.use(express.json());
-app.use("/uploads", express.static("uploads"));
-app.use(cors());
-
 // Middleware to log requests
 app.use((req, res, next) => {
   console.log(`Received ${req.method} request at ${req.url}`);
   next();
 });
 
-// Set up file upload using multer (if needed for other routes)
+// File upload setup (if needed for future use)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, "uploads/");
@@ -48,7 +50,7 @@ const storage = multer.diskStorage({
     cb(null, Date.now() + "-" + file.originalname);
   },
 });
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
 // Signup route
 app.post("/signup", async (req, res) => {
@@ -119,31 +121,32 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// Upload files route – storing Google Drive links directly
+// Upload Google Drive links route (SrDashboard)
 app.post("/SrDashboard", async (req, res) => {
   try {
     const { username, password, subject, driveLink, OtherLink } = req.body;
-
-    console.log("Request body received:", req.body);
 
     if (!username || !password || !subject || !driveLink || !OtherLink) {
       return res.status(400).json({ error: "Please fill all fields." });
     }
 
+    // Hash password before storing (SECURITY FIX)
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
     const existingFile = await db.query(
-      "SELECT file_paths, links FROM files WHERE username = $1 AND password = $2 AND subject = $3",
-      [username, password, subject]
+      "SELECT file_paths, links FROM files WHERE username = $1 AND subject = $2",
+      [username, subject]
     );
 
     if (existingFile.rows.length > 0) {
       await db.query(
-        "UPDATE files SET file_paths = array_append(file_paths, $1), links = $2 WHERE username = $3 AND password = $4 AND subject = $5",
-        [driveLink, OtherLink, username, password, subject]
+        "UPDATE files SET file_paths = $1, links = $2 WHERE username = $3 AND subject = $4",
+        [driveLink, OtherLink, username, subject]
       );
     } else {
       await db.query(
         "INSERT INTO files (username, password, file_paths, links, subject) VALUES ($1, $2, $3, $4, $5)",
-        [username, password, [driveLink], OtherLink, subject]
+        [username, hashedPassword, driveLink, OtherLink, subject]
       );
     }
 
@@ -154,7 +157,7 @@ app.post("/SrDashboard", async (req, res) => {
   }
 });
 
-// Junior dashboard route
+// Junior Dashboard route
 app.get("/Jrdashboard", async (req, res) => {
   const { seniorname } = req.query;
   if (!seniorname) {
@@ -167,28 +170,10 @@ app.get("/Jrdashboard", async (req, res) => {
       [seniorname]
     );
 
-    if (!files.rows || files.rows.length === 0) {
+    if (!files.rows.length) {
       return res.status(404).json({ error: "No files found for the specified senior" });
     }
 
-    // Returning drive links as stored in file_paths
-    return res.status(200).json({ files: files.rows });
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Database Error" });
-  }
-});
-
-
-// Explore route – returning Google Drive links directly
-app.get("/explore", async (req, res) => {
-  try {
-    const files = await db.query("SELECT * FROM files");
-    if (!files.rows || files.rows.length === 0) {
-      return res.status(404).json({ error: "No files found" });
-    }
-
-    // No URL prefixing; drive links are returned as stored.
     res.status(200).json({ files: files.rows });
   } catch (error) {
     console.error("Database error:", error);
@@ -196,6 +181,22 @@ app.get("/explore", async (req, res) => {
   }
 });
 
+// Explore route – returning Google Drive links directly
+app.get("/explore", async (req, res) => {
+  try {
+    const files = await db.query("SELECT * FROM files");
+    if (!files.rows.length) {
+      return res.status(404).json({ error: "No files found" });
+    }
+
+    res.status(200).json({ files: files.rows });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database Error" });
+  }
+});
+
+// Start the server
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 });
