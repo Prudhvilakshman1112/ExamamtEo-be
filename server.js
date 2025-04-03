@@ -9,7 +9,7 @@ import fs from "fs";
 dotenv.config(); // Load environment variables
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 10000; // Ensure correct port binding
 const saltRounds = 10;
 
 app.use(express.json());
@@ -20,38 +20,46 @@ app.use("/uploads", express.static("uploads"));
 const db = new pg.Client({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false, // Required for Render's PostgreSQL
+    rejectUnauthorized: false, // Required for Render PostgreSQL
   },
 });
 
 (async () => {
   try {
     await db.connect();
-    console.log("Connected to PostgreSQL on Render");
+    console.log("✅ Connected to PostgreSQL on Render");
   } catch (err) {
-    console.error("Database connection error:", err);
+    console.error("❌ Database connection error:", err);
     process.exit(1);
   }
 })();
 
 // Middleware to log requests
 app.use((req, res, next) => {
-  console.log(`Received ${req.method} request at ${req.url}`);
+  console.log(`📩 Received ${req.method} request at ${req.url}`);
   next();
 });
 
-// File upload setup (if needed for future use)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
+// ✅ Add a root route to prevent "Cannot GET /"
+app.get("/", (req, res) => {
+  res.status(200).json({ message: "Backend is running 🚀" });
 });
-const upload = multer({ storage });
 
-// Signup route
+// ✅ Explore Route (Fixed)
+app.get("/explore", async (req, res) => {
+  try {
+    const files = await db.query("SELECT * FROM files");
+    if (!files.rows.length) {
+      return res.status(404).json({ error: "No files found" });
+    }
+    res.status(200).json({ files: files.rows });
+  } catch (error) {
+    console.error("❌ Database error in /explore:", error);
+    res.status(500).json({ error: "Database Error" });
+  }
+});
+
+// ✅ Signup Route
 app.post("/signup", async (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password || !role) {
@@ -76,12 +84,12 @@ app.post("/signup", async (req, res) => {
 
     res.status(201).json({ message: "User registered successfully!" });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Signup Error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// Login route
+// ✅ Login Route
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -115,12 +123,12 @@ app.post("/login", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Login error:", err);
+    console.error("❌ Login error:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-// Start the server
+// ✅ Start the Server
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`🚀 Server running at http://localhost:${port}`);
 });
