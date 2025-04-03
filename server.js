@@ -9,7 +9,7 @@ import fs from "fs";
 dotenv.config(); // Load environment variables
 
 const app = express();
-const port = process.env.PORT || 10000; // Ensure correct port binding
+const port = process.env.PORT || 3000;
 const saltRounds = 10;
 
 app.use(express.json());
@@ -20,46 +20,38 @@ app.use("/uploads", express.static("uploads"));
 const db = new pg.Client({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false, // Required for Render PostgreSQL
+    rejectUnauthorized: false, // Required for Render's PostgreSQL
   },
 });
 
 (async () => {
   try {
     await db.connect();
-    console.log("✅ Connected to PostgreSQL on Render");
+    console.log("Connected to PostgreSQL on Render");
   } catch (err) {
-    console.error("❌ Database connection error:", err);
+    console.error("Database connection error:", err);
     process.exit(1);
   }
 })();
 
 // Middleware to log requests
 app.use((req, res, next) => {
-  console.log(`📩 Received ${req.method} request at ${req.url}`);
+  console.log(`Received ${req.method} request at ${req.url}`);
   next();
 });
 
-// ✅ Add a root route to prevent "Cannot GET /"
-app.get("/", (req, res) => {
-  res.status(200).json({ message: "Backend is running 🚀" });
+// File upload setup (if needed for future use)
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
 });
+const upload = multer({ storage });
 
-// ✅ Explore Route (Fixed)
-app.get("/explore", async (req, res) => {
-  try {
-    const files = await db.query("SELECT * FROM files");
-    if (!files.rows.length) {
-      return res.status(404).json({ error: "No files found" });
-    }
-    res.status(200).json({ files: files.rows });
-  } catch (error) {
-    console.error("❌ Database error in /explore:", error);
-    res.status(500).json({ error: "Database Error" });
-  }
-});
-
-// ✅ Signup Route
+// Signup route
 app.post("/signup", async (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password || !role) {
@@ -84,12 +76,12 @@ app.post("/signup", async (req, res) => {
 
     res.status(201).json({ message: "User registered successfully!" });
   } catch (error) {
-    console.error("❌ Signup Error:", error);
+    console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ✅ Login Route
+// Login route
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -123,12 +115,83 @@ app.post("/login", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("❌ Login error:", err);
+    console.error("Login error:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-// ✅ Start the Server
+// Senior Dashboard - Upload files
+app.post("/SrDashboard", async (req, res) => {
+  try {
+    const { username, password, subject, driveLink, OtherLink } = req.body;
+
+    if (!username || !password || !subject || !driveLink || !OtherLink) {
+      return res.status(400).json({ error: "Please fill all fields." });
+    }
+
+    const existingFile = await db.query(
+      "SELECT file_paths, links FROM files WHERE username = $1 AND password = $2 AND subject = $3",
+      [username, password, subject]
+    );
+
+    if (existingFile.rows.length > 0) {
+      await db.query(
+        "UPDATE files SET file_paths = array_append(file_paths, $1), links = $2 WHERE username = $3 AND password = $4 AND subject = $5",
+        [driveLink, OtherLink, username, password, subject]
+      );
+    } else {
+      await db.query(
+        "INSERT INTO files (username, password, file_paths, links, subject) VALUES ($1, $2, $3, $4, $5)",
+        [username, password, [driveLink], OtherLink, subject]
+      );
+    }
+
+    res.json({ message: "Drive link saved successfully", driveLink });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Junior Dashboard - Fetch files by senior name
+app.get("/Jrdashboard", async (req, res) => {
+  const { seniorname } = req.query;
+  if (!seniorname) {
+    return res.status(400).json({ error: "Senior name is required" });
+  }
+
+  try {
+    const files = await db.query(
+      "SELECT * FROM files WHERE username = $1",
+      [seniorname]
+    );
+
+    if (!files.rows || files.rows.length === 0) {
+      return res.status(404).json({ error: "No files found for the specified senior" });
+    }
+
+    return res.status(200).json({ files: files.rows });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database Error" });
+  }
+});
+
+// Explore route - Fetch all files
+app.get("/explore", async (req, res) => {
+  try {
+    const files = await db.query("SELECT * FROM files");
+    if (!files.rows.length) {
+      return res.status(404).json({ error: "No files found" });
+    }
+    res.status(200).json({ files: files.rows });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database Error" });
+  }
+});
+
+// Start the server
 app.listen(port, () => {
-  console.log(`🚀 Server running at http://localhost:${port}`);
+  console.log(`Server running at http://localhost:${port}`);
 });
