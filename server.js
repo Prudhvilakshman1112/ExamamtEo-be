@@ -18,17 +18,16 @@ app.use("/uploads", express.static("uploads"));
 
 // Database connection
 const db = new pg.Client({
-  user: process.env.PG_USER,
-  host: process.env.PG_HOST,
-  database: process.env.PG_DATABASE,
-  password: process.env.PG_PASSWORD,
-  port: process.env.PG_PORT,
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false, // Required for Render's PostgreSQL
+  },
 });
 
 (async () => {
   try {
     await db.connect();
-    console.log("Connected to PostgreSQL");
+    console.log("Connected to PostgreSQL on Render");
   } catch (err) {
     console.error("Database connection error:", err);
     process.exit(1);
@@ -118,81 +117,6 @@ app.post("/login", async (req, res) => {
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-// Upload Google Drive links route (SrDashboard)
-app.post("/SrDashboard", async (req, res) => {
-  try {
-    const { username, password, subject, driveLink, OtherLink } = req.body;
-
-    if (!username || !password || !subject || !driveLink || !OtherLink) {
-      return res.status(400).json({ error: "Please fill all fields." });
-    }
-
-    // Hash password before storing (SECURITY FIX)
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    const existingFile = await db.query(
-      "SELECT file_paths, links FROM files WHERE username = $1 AND subject = $2",
-      [username, subject]
-    );
-
-    if (existingFile.rows.length > 0) {
-      await db.query(
-        "UPDATE files SET file_paths = $1, links = $2 WHERE username = $3 AND subject = $4",
-        [driveLink, OtherLink, username, subject]
-      );
-    } else {
-      await db.query(
-        "INSERT INTO files (username, password, file_paths, links, subject) VALUES ($1, $2, $3, $4, $5)",
-        [username, hashedPassword, driveLink, OtherLink, subject]
-      );
-    }
-
-    res.json({ message: "Drive link saved successfully", driveLink });
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-// Junior Dashboard route
-app.get("/Jrdashboard", async (req, res) => {
-  const { seniorname } = req.query;
-  if (!seniorname) {
-    return res.status(400).json({ error: "Senior name is required" });
-  }
-
-  try {
-    const files = await db.query(
-      "SELECT * FROM files WHERE username = $1",
-      [seniorname]
-    );
-
-    if (!files.rows.length) {
-      return res.status(404).json({ error: "No files found for the specified senior" });
-    }
-
-    res.status(200).json({ files: files.rows });
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Database Error" });
-  }
-});
-
-// Explore route – returning Google Drive links directly
-app.get("/explore", async (req, res) => {
-  try {
-    const files = await db.query("SELECT * FROM files");
-    if (!files.rows.length) {
-      return res.status(404).json({ error: "No files found" });
-    }
-
-    res.status(200).json({ files: files.rows });
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Database Error" });
   }
 });
 
