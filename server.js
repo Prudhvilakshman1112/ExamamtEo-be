@@ -194,7 +194,7 @@ app.get("/Jrdashboard", async (req, res) => {
 });
 
 // Explore route - Fetch all files or by subject
-主
+
 app.get("/explore", async (req, res) => {
   const { subjectname } = req.query;
 
