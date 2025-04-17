@@ -153,21 +153,37 @@ app.post("/SrDashboard", async (req, res) => {
   }
 });
 
-// Junior Dashboard - Fetch files by senior name
+// Junior Dashboard - Fetch files by senior name or subject
 app.get("/Jrdashboard", async (req, res) => {
-  const { seniorname } = req.query;
-  if (!seniorname) {
-    return res.status(400).json({ error: "Senior name is required" });
+  const { seniorname, subjectname } = req.query;
+
+  // Check if at least one parameter is provided
+  if (!seniorname && !subjectname) {
+    return res.status(400).json({ error: "At least one of senior name or subject name is required" });
   }
 
   try {
-    const files = await db.query(
-      "SELECT * FROM files WHERE username = $1",
-      [seniorname]
-    );
+    // Build dynamic query based on provided parameters
+    let query = "SELECT * FROM files WHERE 1=1";
+    const values = [];
+    let paramIndex = 1;
+
+    if (seniorname) {
+      query += ` AND username = $${paramIndex}`;
+      values.push(seniorname);
+      paramIndex++;
+    }
+
+    if (subjectname) {
+      query += ` AND subject = $${paramIndex}`;
+      values.push(subjectname);
+      paramIndex++;
+    }
+
+    const files = await db.query(query, values);
 
     if (!files.rows || files.rows.length === 0) {
-      return res.status(404).json({ error: "No files found for the specified senior" });
+      return res.status(404).json({ error: "No files found for the specified criteria" });
     }
 
     return res.status(200).json({ files: files.rows });
@@ -177,14 +193,25 @@ app.get("/Jrdashboard", async (req, res) => {
   }
 });
 
-// Explore route - Fetch all files
+// Explore route - Fetch all files or by subject
 app.get("/explore", async (req, res) => {
+  const { subjectname } = req.query;
+
   try {
-    const files = await db.query("SELECT * FROM files");
-    if (!files.rows.length) {
+    let query = "SELECT * FROM files";
+    const values = [];
+    if (subjectname) {
+      query += " WHERE subject = $1";
+      values.push(subjectname);
+    }
+
+    const files = await db.query(query, values);
+
+    if (!files.rows || files.rows.length === 0) {
       return res.status(404).json({ error: "No files found" });
     }
-    res.status(200).json({ files: files.rows });
+
+    return res.status(200).json({ files: files.rows });
   } catch (error) {
     console.error("Database error:", error);
     res.status(500).json({ error: "Database Error" });
